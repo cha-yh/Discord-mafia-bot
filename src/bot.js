@@ -7,6 +7,7 @@ const client = new Discord.Client();
 const PREFIX = "$";
 
 let isCreated = false;
+let joinedUsers = [];
 
 client.on('ready', () => {
     console.log(`${client.user.tag} has logged in.`);
@@ -50,6 +51,19 @@ client.on('message', msg => {
                         permissions: ['MANAGE_ROLES']
                     }
                 }).then(d => {console.log('d', d)});
+            }
+        }
+
+        if(CMD_NAME === 'join') {
+            const authorId = msg.author.id;
+            const index = joinedUsers.findIndex(userId => userId === authorId);
+            console.log('index', index);
+            const member = msg.guild.members.cache.get(authorId);
+            if(index === -1) {
+                joinedUsers.push(authorId);
+                msg.channel.send(`${member.user.username}님이 참여하였습니다.`);
+            } else {
+                msg.channel.send(`${member.user.username}님은 이미 참여한 상태입니다.`);
             }
         }
     }
