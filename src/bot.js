@@ -21,7 +21,7 @@ client.on('message', msg => {
 
         console.log('CMD_NAME', CMD_NAME);
         console.log('args', args);
-        
+
         if(CMD_NAME === 'create') {
             //NOTE : check validation
             if(args[0].match(/[^0-9]/g)) {
@@ -39,6 +39,18 @@ client.on('message', msg => {
         
             //NOTE : let createFlag be true
             isCreated = true;
+
+            //NOTE : make roles
+            for(let i = 0; i < args[0]-1; i++) {
+                msg.guild.roles.create({
+                    data: {
+                        name: `role[${i}]`,
+                        position: 1,
+                        color: 'GOLD',
+                        permissions: ['MANAGE_ROLES']
+                    }
+                }).then(d => {console.log('d', d)});
+            }
         }
     }
   });
