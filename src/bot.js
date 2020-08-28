@@ -83,6 +83,16 @@ client.on('message', msg => {
         
             joinedUserNames.length && msg.channel.send(`참여한 멤버: ${joinedUserNames.join(', ')}`);
         }
+
+        if(CMD_NAME === 'end') {
+            //NOTE : initiate vars
+            joinedUsers = [];
+            isCreated = false;
+
+            //TODO : find roles that contain 'role' and delete roles
+            const role = msg.guild.roles.cache.find(role => role.name == 'role[0]');
+            role.delete();
+        }
     }
   });
 
