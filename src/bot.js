@@ -66,6 +66,23 @@ client.on('message', msg => {
                 msg.channel.send(`${member.user.username}님은 이미 참여한 상태입니다.`);
             }
         }
+
+        if(CMD_NAME === 'status') {
+            const joinedUserCount = joinedUsers.length;
+        
+            msg.channel.send(`Joined user count: ${joinedUserCount}`);
+            let joinedUserNames = [];
+            joinedUsers.length
+                ? 
+                joinedUsers.forEach(userId => {
+                    const member = msg.guild.members.cache.get(userId);
+                    joinedUserNames.push(member.user.username);
+                })
+                
+                : msg.channel.send('아무도 참여하지 않은 상태입니다.');
+        
+            joinedUserNames.length && msg.channel.send(`참여한 멤버: ${joinedUserNames.join(', ')}`);
+        }
     }
   });
 
