@@ -150,6 +150,12 @@ client.on('message', msg => {
             })
             
         }
+
+        if(CMD_NAME === 'quit') {
+            const filtered = joinedUserIds.filter(id => id !== msg.author.id);
+            joinedUserIds = filtered;
+            msg.channel.send(`${msg.author.username}님이 게임에서 나가셨습니다.`);
+        }
     }
   });
 
