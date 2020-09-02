@@ -179,7 +179,14 @@ client.on('message', msg => {
             //         member.roles.add(role.id);
             //     });
             // })
-            
+
+            //TODO: Add mute
+        }
+        
+        if(CMD_NAME === 'mute') {
+            const userId = msg.author.id;
+            const member = msg.guild.members.cache.get(userId);
+            member.voice.setMute(true);
         }
 
         if(CMD_NAME === 'end') {
@@ -200,12 +207,15 @@ client.on('message', msg => {
                 msg.guild.roles.cache.get(id).delete();
             })
             
+            //TODO: unMute(when created game is end)
         }
 
         if(CMD_NAME === 'quit') {
             const filtered = joinedUserIds.filter(id => id !== msg.author.id);
             joinedUserIds = filtered;
             msg.channel.send(`${msg.author.username}님이 게임에서 나가셨습니다.`);
+
+            //TODO: unMute(when joined member is quit)
         }
     }
   });
