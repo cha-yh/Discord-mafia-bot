@@ -1,6 +1,6 @@
 require('dotenv').config();
 const Discord = require('discord.js');
-
+const _ = require('lodash');
 const client = new Discord.Client();
 
 const PREFIX = "$";
@@ -8,6 +8,8 @@ const PREFIX = "$";
 let isCreated = false;
 let joinedUserIds = [];
 let createdChannelIds = [];
+let processChannelId = undefined;
+let voiceChannelId = undefined;
 let createdRoleIds = [];
 let mafiaId;
 
@@ -47,7 +49,6 @@ client.on('message', msg => {
         if(CMD_NAME === 'join') {
             const authorId = msg.author.id;
             const index = joinedUserIds.findIndex(userId => userId === authorId);
-            console.log('index', index);
             const member = msg.guild.members.cache.get(authorId);
             if(index === -1) {
                 joinedUserIds.push(authorId);
@@ -75,27 +76,74 @@ client.on('message', msg => {
         }
 
         if(CMD_NAME === 'start') {
+            if(joinedUserIds.length === 0) {
+                msg.channel.send('참가한 인원없이 게임을 시작할 수 없습니다.');
+                return;
+            }
             //NOTE: create channels
             joinedUserIds.forEach(userId => {
                 const member = msg.guild.members.cache.get(userId);
                 msg.guild.channels.create(`${member.user.username}`, {
-                    permissionOverwrites: joinedUserIds.map(innerUserId => {
-                        if(innerUserId === userId) {
+                    permissionOverwrites: msg.guild.members.cache.map(member => {
+                        if(member.id === userId) {
                             return {
-                                id: innerUserId
+                                id: userId,
+                                deny: ["SEND_MESSAGES"]
                             }
                         }
                         return {
-                            id: innerUserId,
-                            deny: ["VIEW_CHANNEL", "SEND_MESSAGES"]
+                            id: member.id,
+                            deny: ["VIEW_CHANNEL"]
                         }
                     }),
 
                 }).then(channel => {
                     createdChannelIds.push(channel.id);
-                    channel.send('이 채널은 당신에게만 보이는 채널입니다.');
-                    userId === mafiaId && channel.send('당신은 마피아입니다. 밤이되면 죽이고 싶은 사람에게 송장 역할을 부여하세요.');
+                    channel.send('이 채널은 당신에게만 보이는 채널입니다. 이곳은 오직 진행해야 하는 상황 메세지를 읽고, "반응추가"를 투표, 투표 가결 처리 등을 할 수 있습니다.');
+                    userId === mafiaId && channel.send('당신은 마피아입니다. 밤이되면 죽이고 싶은 사람을 "반응 추가하기"를 통해 선택하세요.');
                 })
+            })
+            //NOTE: Create a channel for showing result
+            msg.guild.channels.create('전체 진행 채널', {
+                permissionOverwrites: msg.guild.members.cache.map(member => {
+                    const isMemberJoined = _.some(joinedUserIds, id => id === member.id);
+                    if(!isMemberJoined) {
+                        console.log('member', member.user);
+                        return {
+                            id: member.id,
+                            deny: ["VIEW_CHANNEL"]
+                        }
+                    }
+                    return {
+                        id: member.id,
+                        deny: ["SEND_MESSAGES"]
+                    }
+                })
+            }).then(channel => {
+                createdChannelIds.push(channel.id);
+                processChannelId = channel.id;
+                channel.send('이 채널은 전체 채널이며, 전체적인 게임 진행상황을 알려줍니다. ')
+            })
+            //NOTE: Create a voice type channel
+            msg.guild.channels.create('토론 음성 채널', {
+                type: "voice",
+                permissionOverwrites: msg.guild.members.cache.map(member => {
+                    const isMemberJoined = _.some(joinedUserIds, id => id === member.id);
+                    if(!isMemberJoined) {
+                        console.log('member', member.user);
+                        return {
+                            id: member.id,
+                            deny: ["VIEW_CHANNEL"]
+                        }
+                    }
+                    return {
+                        id: member.id,
+                        deny: ["SEND_MESSAGES"]
+                    }
+                })
+            }).then(channel => {
+                createdChannelIds.push(channel.id);
+                voiceChannelId = channel.id;
             })
 
             //NOTE: random mafia
@@ -143,6 +191,9 @@ client.on('message', msg => {
             createdChannelIds.forEach(id => {
                 msg.guild.channels.cache.get(id).delete();
             })
+            processChannelId = undefined;
+            voiceChannelId = undefined;
+
             
             //NOTE: delete created roles
             createdRoleIds.forEach(id => {
