@@ -154,31 +154,31 @@ client.on('message', msg => {
 
             //NOTE : make roles
             //FIXME : fix position issue
-            msg.guild.roles.create({
-                data: {
-                    name: '송장',
-                    position: joinedUserIds.length+1,
-                    color: 'DARK_GREY',
-                    permissions: []
-                }
-            }).then(role => {
-                createdRoleIds.push(role.id);
-            })
+            // msg.guild.roles.create({
+            //     data: {
+            //         name: '송장',
+            //         position: joinedUserIds.length+1,
+            //         color: 'DARK_GREY',
+            //         permissions: []
+            //     }
+            // }).then(role => {
+            //     createdRoleIds.push(role.id);
+            // })
             
-            joinedUserIds.forEach(userId => {
-                msg.guild.roles.create({
-                    data: {
-                        name: `role[${userId}]`,
-                        position: userId === mafiaId ? joinedUserIds.length : 1,
-                        color: 'GOLD',
-                        permissions: userId === mafiaId ? ['MANAGE_ROLES'] : []
-                    }
-                }).then(role => {
-                    createdRoleIds.push(role.id);
-                    const member = msg.guild.members.cache.get(userId);
-                    member.roles.add(role.id);
-                });
-            })
+            // joinedUserIds.forEach(userId => {
+            //     msg.guild.roles.create({
+            //         data: {
+            //             name: `role[${userId}]`,
+            //             position: userId === mafiaId ? joinedUserIds.length : 1,
+            //             color: 'GOLD',
+            //             permissions: userId === mafiaId ? ['MANAGE_ROLES'] : []
+            //         }
+            //     }).then(role => {
+            //         createdRoleIds.push(role.id);
+            //         const member = msg.guild.members.cache.get(userId);
+            //         member.roles.add(role.id);
+            //     });
+            // })
             
         }
 
