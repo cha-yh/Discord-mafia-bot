@@ -4,6 +4,7 @@ const _ = require('lodash');
 const client = new Discord.Client();
 
 const PREFIX = "$";
+const MINUTE = 60*1000;
 
 let isCreated = false;
 let joinedUserIds = [];
@@ -114,10 +115,10 @@ client.on('message', msg => {
                     createdChannelIds.push(channel.id);
                     players.find(item => item.userId === userId).channelId = channel.id;
                     channel.send('이 채널은 당신에게만 보이는 채널입니다. 이곳은 오직 진행해야 하는 상황 메세지를 읽고, "반응추가"를 투표, 투표 가결 처리 등을 할 수 있습니다.');
-                    channel.send('Ready?').then(msg => {
+                    userId === mafiaId && channel.send('당신은 마피아입니다. 밤이되면 죽이고 싶은 사람을 "반응 추가하기"를 통해 선택하세요.');
+                    channel.send('[Ready] 준비가 완료되었습니까? 되었다면 이 메세지에 "반응 추가하기"를 하여 준비를 완료하세요.').then(msg => {
                         players.find(item => item.userId === userId).readyMsgId = msg.id;
                     })
-                    userId === mafiaId && channel.send('당신은 마피아입니다. 밤이되면 죽이고 싶은 사람을 "반응 추가하기"를 통해 선택하세요.');
                 })
             })
             //NOTE: Create a channel for showing result
@@ -245,11 +246,32 @@ client.on('messageReactionAdd', (reaction, user) => {
     const msgId = reaction.message.id;
     const userId = user.id;
     const player = players.find(player => player.userId === userId);
+
+    //NOTE: for ready
     if(player.readyMsgId === msgId) {
         players.find(player => player.userId === userId).isReady = true;
+        const userChannelId = players.find(player => player.userId === userId).channelId;
+        reaction.message.delete();
+        reaction.message.guild.channels.cache.get(userChannelId).send('게임 Ready 완료.')
 
         isAllReady = !_.some(players, item => item.isReady === false );
+
+        if(isAllReady) {
+            const processChannel = reaction.message.guild.channels.cache.get(processChannelId)
+            processChannel.send('All users ready');
+            processChannel.send('모든 유저가 준비 완료되었습니다. 이제 3분 동안 토론을 진행할 수 있습니다. 3분이 지나면 자동 음소거 처리됩니다. 토론 후에는 투표를 진행하며, 지목된 사람은 최후의 변론을 위해 30초간 음소거가 해제됩니다. 그 후 찬반투표를 통해 최종결정을 하게됩니다.');
+            setTimeout(() => {
+                processChannel.send('토론 종료까지 5초 남았습니다.');
+                setTimeout(() => {
+                    processChannel.send('토론 종료. 투표를 위해 모두 음소거 처리됩니다. 각자의 채널에서 투표를 진행해주세요.');
+                    //TODO: mute
+
+                    //TODO: send messages about the vote
+                }, 5000);
+            }, 5000);
+        }
     }
+
 })
 
 client.login(process.env.DISCORDJS_BOT_TOKEN);
