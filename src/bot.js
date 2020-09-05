@@ -241,4 +241,15 @@ client.on('message', msg => {
     }
 });
 
+client.on('messageReactionAdd', (reaction, user) => {
+    const msgId = reaction.message.id;
+    const userId = user.id;
+    const player = players.find(player => player.userId === userId);
+    if(player.readyMsgId === msgId) {
+        players.find(player => player.userId === userId).isReady = true;
+
+        isAllReady = !_.some(players, item => item.isReady === false );
+    }
+})
+
 client.login(process.env.DISCORDJS_BOT_TOKEN);
