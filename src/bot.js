@@ -90,7 +90,8 @@ client.on('message', msg => {
                     isReady: false,
                     isDead: false,
                     channelId: undefined,
-                    readyMsgId: undefined
+                    readyMsgId: undefined,
+                    voteMessages: []
                 }
             })
 
@@ -203,10 +204,7 @@ client.on('message', msg => {
             //TODO: Add mute
         }
         
-        if(CMD_NAME === 'mute') {
-            // const userId = msg.author.id;
-            // const member = msg.guild.members.cache.get(userId);
-            // member.voice.setMute(true);
+        if(CMD_NAME === 'test') {
             console.log('player', players);
             console.log('isAllReady', isAllReady);
         }
@@ -261,14 +259,40 @@ client.on('messageReactionAdd', (reaction, user) => {
             processChannel.send('All users ready');
             processChannel.send('모든 유저가 준비 완료되었습니다. 이제 3분 동안 토론을 진행할 수 있습니다. 3분이 지나면 자동 음소거 처리됩니다. 토론 후에는 투표를 진행하며, 지목된 사람은 최후의 변론을 위해 30초간 음소거가 해제됩니다. 그 후 찬반투표를 통해 최종결정을 하게됩니다.');
             setTimeout(() => {
-                processChannel.send('토론 종료까지 5초 남았습니다.');
+                processChannel.send('토론 종료까지 3초 남았습니다.');
                 setTimeout(() => {
-                    processChannel.send('토론 종료. 투표를 위해 모두 음소거 처리됩니다. 각자의 채널에서 투표를 진행해주세요.');
-                    //TODO: mute
+                    processChannel.send('토론 종료. 투표를 위해 모두 음소거 처리됩니다. 각자의 채널에서 투표 메세지를 확인하고 투표를 진행해주세요.');
+                    //NOTE: mute players
+                    players.forEach(player => {
+                        const userId = player.userId;
+                        const member = reaction.message.guild.members.cache.get(userId);
+                        member.voice.setMute(true).then().catch(error => {
+                            if(error.code === 40032) {
+                                console.log(`${member.user.username} is not connected to voice.`);
+                            } else {
+                                console.log('error', error);
+                            }
+                        });
+                    });
 
                     //TODO: send messages about the vote
-                }, 5000);
-            }, 5000);
+                    players.map(player => {
+                        const playerChannelId = player.channelId;
+                        const playerChannel = reaction.message.guild.channels.cache.get(playerChannelId);
+                        const playersWithOutMe = _.filter(players, player4Filter => {
+                            return (!player4Filter.isDead && player4Filter.userId !== player.userId);
+                        })
+                        player.voteMessages = []; 
+                        console.log('playersWithOutMe', playersWithOutMe);
+                        playersWithOutMe.length && playersWithOutMe.forEach(vMsgs => {
+                            playerChannel.send(`vote: ${vMsgs.userName}`).then(msg => {
+                                player.voteMessages.push(msg.id);
+                            });
+                        });
+                    });
+                    
+                }, 3000);
+            }, 1000);
         }
     }
 
