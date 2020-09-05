@@ -15,6 +15,8 @@ let createdRoleIds = [];
 let mafiaId;
 let players = [];
 let isAllReady = false;
+let isAllVoted = false;
+let voteRound = 0;
 
 client.on('ready', () => {
     console.log(`${client.user.tag} has logged in.`);
@@ -83,6 +85,8 @@ client.on('message', msg => {
                 msg.channel.send('참가한 인원없이 게임을 시작할 수 없습니다.');
                 return;
             }
+
+            //NOTE: init players
             players = joinedUserIds.map(userId => {
                 return {
                     userId,
@@ -91,7 +95,10 @@ client.on('message', msg => {
                     isDead: false,
                     channelId: undefined,
                     readyMsgId: undefined,
-                    voteMessages: []
+                    voteMessages: [],
+                    voteUserIds: [],
+                    isVoteCompletedArray: [],
+
                 }
             })
 
@@ -200,8 +207,6 @@ client.on('message', msg => {
             //         member.roles.add(role.id);
             //     });
             // })
-
-            //TODO: Add mute
         }
         
         if(CMD_NAME === 'test') {
@@ -244,7 +249,7 @@ client.on('messageReactionAdd', (reaction, user) => {
     const msgId = reaction.message.id;
     const userId = user.id;
     const player = players.find(player => player.userId === userId);
-
+    const processChannel = reaction.message.guild.channels.cache.get(processChannelId)
     //NOTE: for ready
     if(player.readyMsgId === msgId) {
         players.find(player => player.userId === userId).isReady = true;
@@ -255,7 +260,7 @@ client.on('messageReactionAdd', (reaction, user) => {
         isAllReady = !_.some(players, item => item.isReady === false );
 
         if(isAllReady) {
-            const processChannel = reaction.message.guild.channels.cache.get(processChannelId)
+            
             processChannel.send('All users ready');
             processChannel.send('모든 유저가 준비 완료되었습니다. 이제 3분 동안 토론을 진행할 수 있습니다. 3분이 지나면 자동 음소거 처리됩니다. 토론 후에는 투표를 진행하며, 지목된 사람은 최후의 변론을 위해 30초간 음소거가 해제됩니다. 그 후 찬반투표를 통해 최종결정을 하게됩니다.');
             setTimeout(() => {
@@ -275,7 +280,8 @@ client.on('messageReactionAdd', (reaction, user) => {
                         });
                     });
 
-                    //TODO: send messages about the vote
+                    //NOTE: send messages about the vote
+                    isAllVoted = false;
                     players.map(player => {
                         const playerChannelId = player.channelId;
                         const playerChannel = reaction.message.guild.channels.cache.get(playerChannelId);
@@ -284,9 +290,18 @@ client.on('messageReactionAdd', (reaction, user) => {
                         })
                         player.voteMessages = []; 
                         console.log('playersWithOutMe', playersWithOutMe);
-                        playersWithOutMe.length && playersWithOutMe.forEach(vMsgs => {
-                            playerChannel.send(`vote: ${vMsgs.userName}`).then(msg => {
-                                player.voteMessages.push(msg.id);
+                        playersWithOutMe.length && playersWithOutMe.forEach(pWOM => {
+                            playerChannel.send(`vote: ${pWOM.userName}`).then(msg => {
+                                player.voteMessages.push({
+                                    messageId: msg.id,
+                                    targetUserId: pWOM.userId
+                                });
+                            });
+                        });
+                        playerChannel.send(`vote: 기권`).then(msg => {
+                            player.voteMessages.push({
+                                messageId: msg.id,
+                                targetUserId: "abstention"
                             });
                         });
                     });
