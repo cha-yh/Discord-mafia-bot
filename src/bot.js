@@ -311,6 +311,64 @@ client.on('messageReactionAdd', (reaction, user) => {
         }
     }
 
+    if(_.some(player.voteMessages, vMsg => vMsg.messageId === reaction.message.id)) {
+        //NOTE: insert votedUserId
+        const votedUserId = player.voteMessages.find(msg => msg.messageId === reaction.message.id).targetUserId;
+        player.voteUserIds.push(votedUserId);
+
+        //NOTE: delete voteMessages
+        player.voteMessages.forEach(msg => {
+            reaction.message.channel.messages.cache.get(msg.messageId).delete();
+        });
+        //NOTE: sending a message abount finishing vote
+        reaction.message.channel.send('투표 완료.');
+
+        //NOTE: initiate voteMessages / voteCompleted
+        player.voteMessages = [];
+        player.isVoteCompletedArray.push(true);
+
+        //NOTE: change isAllVoted flag 
+        isAllVoted = !_.some(players, p => (p.isVoteCompletedArray[voteRound] === false || p.isVoteCompletedArray[voteRound] === undefined) );
+        
+        //NOTE: finish voting / round + 1
+        //TODO: finish inside todos
+        if(isAllVoted) {
+            processChannel.send('모든 유저 투표 완료.');
+            const voteResult = players.map(p => {
+                const userName = p.userName;
+                const votedUserId = p.voteUserIds[voteRound];
+                let votedUserName = "";
+                if(votedUserId === "abstention") {
+                    votedUserName = "abstention";
+                } else {
+                    const votedPlayer = players.find(item => item.userId === votedUserId);
+                    console.log('votedPlayer', votedPlayer);
+                    votedUserName = votedPlayer ? votedPlayer.userName : "알수없는 에러";
+                }
+
+                return {
+                    voterName: userName,
+                    votedUserName
+                }
+
+            });
+            voteResult.forEach(vr => {
+                const resultText = `[${voteRound+1} Round] ${vr.voterName}가 ${vr.votedUserName}를 투표하였습니다.`
+                processChannel.send(resultText);
+            })
+            const count = _.countBy(voteResult, vr => vr.votedUserName);
+            //TODO: 투표수 과반시 players에서 삭제하고 투표로 처형했다는 메세지 보내기
+            //TODO: 만약 마피아 처형시 게임 종료. 메세지 발송 후 종료.
+            //TODO: 만약 abstention 과반 시 아무일도 없다는 메세지.
+            //TODO: 마피아의 밤이 찾아오는 로직 구현하기
+
+            console.log('count', count);
+            voteRound += 1;
+        }
+    } else {
+        console.log('error: reaction to other');
+    }
+
 })
 
 client.login(process.env.DISCORDJS_BOT_TOKEN);
