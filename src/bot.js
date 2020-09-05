@@ -12,6 +12,8 @@ let processChannelId = undefined;
 let voiceChannelId = undefined;
 let createdRoleIds = [];
 let mafiaId;
+let players = [];
+let isAllReady = false;
 
 client.on('ready', () => {
     console.log(`${client.user.tag} has logged in.`);
@@ -80,6 +82,17 @@ client.on('message', msg => {
                 msg.channel.send('참가한 인원없이 게임을 시작할 수 없습니다.');
                 return;
             }
+            players = joinedUserIds.map(userId => {
+                return {
+                    userId,
+                    userName: msg.guild.members.cache.get(userId).user.username,
+                    isReady: false,
+                    isDead: false,
+                    channelId: undefined,
+                    readyMsgId: undefined
+                }
+            })
+
             //NOTE: create channels
             joinedUserIds.forEach(userId => {
                 const member = msg.guild.members.cache.get(userId);
@@ -99,7 +112,11 @@ client.on('message', msg => {
 
                 }).then(channel => {
                     createdChannelIds.push(channel.id);
+                    players.find(item => item.userId === userId).channelId = channel.id;
                     channel.send('이 채널은 당신에게만 보이는 채널입니다. 이곳은 오직 진행해야 하는 상황 메세지를 읽고, "반응추가"를 투표, 투표 가결 처리 등을 할 수 있습니다.');
+                    channel.send('Ready?').then(msg => {
+                        players.find(item => item.userId === userId).readyMsgId = msg.id;
+                    })
                     userId === mafiaId && channel.send('당신은 마피아입니다. 밤이되면 죽이고 싶은 사람을 "반응 추가하기"를 통해 선택하세요.');
                 })
             })
@@ -108,7 +125,6 @@ client.on('message', msg => {
                 permissionOverwrites: msg.guild.members.cache.map(member => {
                     const isMemberJoined = _.some(joinedUserIds, id => id === member.id);
                     if(!isMemberJoined) {
-                        console.log('member', member.user);
                         return {
                             id: member.id,
                             deny: ["VIEW_CHANNEL"]
@@ -122,7 +138,9 @@ client.on('message', msg => {
             }).then(channel => {
                 createdChannelIds.push(channel.id);
                 processChannelId = channel.id;
-                channel.send('이 채널은 전체 채널이며, 전체적인 게임 진행상황을 알려줍니다. ')
+                channel.send('이 채널은 전체 채널이며, 전체적인 게임 진행상황을 알려줍니다. ');
+                channel.send('게임 시작을 위해 각자의 채널에 접속하여 "Ready"라는 문구에 "반응추가하기"를 통해 아무 반응을 하면 준비상태가 됩니다.');
+                channel.send('모두 "토론 음성 채널"에 입장해주세요.');
             })
             //NOTE: Create a voice type channel
             msg.guild.channels.create('토론 음성 채널', {
@@ -151,6 +169,7 @@ client.on('message', msg => {
             mafiaId = joinedUserIds[randomIndex];
             const mafia = msg.guild.members.cache.get(mafiaId);
             console.log('mafia name: ', mafia.user.username);
+            
 
             //NOTE : make roles
             //FIXME : fix position issue
@@ -184,9 +203,11 @@ client.on('message', msg => {
         }
         
         if(CMD_NAME === 'mute') {
-            const userId = msg.author.id;
-            const member = msg.guild.members.cache.get(userId);
-            member.voice.setMute(true);
+            // const userId = msg.author.id;
+            // const member = msg.guild.members.cache.get(userId);
+            // member.voice.setMute(true);
+            console.log('player', players);
+            console.log('isAllReady', isAllReady);
         }
 
         if(CMD_NAME === 'end') {
@@ -218,6 +239,6 @@ client.on('message', msg => {
             //TODO: unMute(when joined member is quit)
         }
     }
-  });
+});
 
 client.login(process.env.DISCORDJS_BOT_TOKEN);
