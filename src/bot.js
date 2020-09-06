@@ -455,6 +455,37 @@ client.on('messageReactionAdd', (reaction, user) => {
         }
     }
 
+    //SECTION: kill someone through reaction
+    if(_.some(mafiaKillingMsgObjectArray, mkmo => mkmo.messageId === reaction.message.id)) {
+        const target = {...mafiaKillingMsgObjectArray.find(mkmo => mkmo.messageId === reaction.message.id)};
+        
+        //NOTE: initiate mafiaKillingMsgObjectArray and delete killing msgs
+        mafiaKillingMsgObjectArray.forEach(mkmo => {
+            reaction.message.channel.messages.cache.get(mkmo.messageId).delete();
+        })
+        mafiaKillingMsgObjectArray = [];
+
+
+        mafiaChannel.send(`당신은 ${target.targetUserName}을 제거하였습니다.`);
+        players = _.filter(players, p => p.userId !== target.targetUserId);
+        console.log('players', players);
+        processChannel.send(`낮이 되었습니다.`);
+        processChannel.send(`${target.targetUserName}은(는) 마피아에게 ${reaction.emoji}로 살해당하였습니다.`);
+        processChannel.send(`음소거가 해제됩니다. 3분간 토론을 진행해주세요.`);
+        //NOTE: unmute players
+        players.forEach(player => {
+            const userId = player.userId;
+            const member = reaction.message.guild.members.cache.get(userId);
+            member.voice.setMute(false).then().catch(error => {
+                if(error.code === 40032) {
+                    console.log(`${member.user.username} is not connected to voice.`);
+                } else {
+                    console.log('error', error);
+                }
+            });
+        });
+    }
+
 })
 
 client.login(process.env.DISCORDJS_BOT_TOKEN);
