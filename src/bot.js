@@ -3,6 +3,8 @@ const Discord = require('discord.js');
 const _ = require('lodash');
 const sendAnnouncement = require('./sendAnnouncement');
 const startDiscussion = require('./startDiscussion');
+const createChannels = require('./createChannels');
+const setMute = require('./setMute');
 
 const client = new Discord.Client();
 
@@ -24,36 +26,27 @@ let mafiaKillingMsgObjectArray = [];
 let voteCount = 0;
 let isGameStarted = false;
 
-async function finishGame(guild) {    
+async function finishGame(guild) {
     //NOTE: delete created roles
     createdRoleIds.forEach(id => {
         guild.roles.cache.get(id).delete();
     })
     
-    //NOTE: unMute(when created game is end)
-    const promise1 = () => new Promise((resolve, reject) => {
-        const promises = joinedUserIds.map(id => {
-            return new Promise((_resolve) => {
-                _resolve(guild.members.cache.get(id).voice.setMute(false));
-            })
-        })
-        resolve(Promise.all(promises));
-    })
-    
     //NOTE: delete created channels
-    const promise2 = () => new Promise((resolve, reject) => {
-        const promises = createdChannelIds.map(id => {
-            return new Promise((_resolve) => {
-                _resolve(guild.channels.cache.get(id).delete());
-            })
-        });
+    const deleteChannels = () => new Promise(async (resolve, reject) => {
+        for(const id of createdChannelIds) {
+            await guild.channels.cache.get(id).delete()
+        }
         createdChannelIds = [];
-        resolve(Promise.all(promises));
+        resolve();
     })
     
-    // Promise.all([promise1, promise2]);
-    await promise1();
-    await promise2();
+    try {
+        await setMute(guild, joinedUserIds, false)
+        await deleteChannels();
+    } catch (error) {
+        console.log('$end: error', error);
+    }
     
     //NOTE : initiate vars
     voiceChannelId = undefined;
@@ -146,36 +139,14 @@ client.on('message', async msg => {
 
                 }
             })
+            //NOTE: random mafia
+            const randomIndex = Math.floor(Math.random() * joinedUserIds.length);
+            mafiaId = joinedUserIds[randomIndex];
+            const mafia = msg.guild.members.cache.get(mafiaId);
+            console.log('mafia name: ', mafia.user.username);
 
             //NOTE: create channels
-            joinedUserIds.forEach(userId => {
-                const member = msg.guild.members.cache.get(userId);
-                msg.guild.channels.create(`${member.user.username}`, {
-                    permissionOverwrites: msg.guild.members.cache.map(member => {
-                        if(member.id === userId) {
-                            return {
-                                id: userId,
-                                deny: ["SEND_MESSAGES"]
-                            }
-                        }
-                        return {
-                            id: member.id,
-                            deny: ["VIEW_CHANNEL"]
-                        }
-                    }),
-
-                }).then(channel => {
-                    createdChannelIds.push(channel.id);
-                    players.find(item => item.userId === userId).channelId = channel.id;
-                    channel.send('모두 "토론 음성 채널"에 입장해주세요.');
-                    channel.send('이 채널은 당신에게만 보이는 채널입니다. 이곳은 오직 진행해야 하는 상황 메세지를 읽고, 우클릭>"반응추가"를 투표, 투표 가결 처리 등을 할 수 있습니다.');
-                    userId === mafiaId && channel.send('당신은 마피아입니다. 밤이되면 죽이고 싶은 사람을 "반응 추가하기"를 통해 선택하세요.');
-                    channel.send('[Ready] 준비가 완료되었습니까? 되었다면 이 메세지에 "반응 추가하기"를 하여 준비를 완료하세요.').then(msg => {
-                        players.find(item => item.userId === userId).readyMsgId = msg.id;
-                    })
-                })
-            })
-            
+            createChannels(msg.guild, joinedUserIds, players, mafiaId, createdChannelIds);
 
             //NOTE: Create a voice type channel
             msg.guild.channels.create('토론 음성 채널', {
@@ -183,7 +154,6 @@ client.on('message', async msg => {
                 permissionOverwrites: msg.guild.members.cache.map(member => {
                     const isMemberJoined = _.some(joinedUserIds, id => id === member.id);
                     if(!isMemberJoined) {
-                        console.log('member', member.user);
                         return {
                             id: member.id,
                             deny: ["VIEW_CHANNEL"]
@@ -199,11 +169,7 @@ client.on('message', async msg => {
                 voiceChannelId = channel.id;
             })
 
-            //NOTE: random mafia
-            const randomIndex = Math.floor(Math.random() * joinedUserIds.length);
-            mafiaId = joinedUserIds[randomIndex];
-            const mafia = msg.guild.members.cache.get(mafiaId);
-            console.log('mafia name: ', mafia.user.username);
+            
             
 
             //NOTE : make roles
@@ -236,13 +202,22 @@ client.on('message', async msg => {
         }
         
         if(CMD_NAME === 'test') {
-            // console.log('voiceChannelId', voiceChannelId);
-            // console.log('voice: ', msg.guild.members.cache.get(msg.author.id).voice)
+            console.log('isCreated', isCreated);
+            console.log('joinedUserIds', joinedUserIds);
+            console.log('createdChannelIds', createdChannelIds);
+            console.log('voiceChannelId', voiceChannelId);
+            console.log('createdRoleIds', createdRoleIds);
+            console.log('mafiaId', mafiaId);
             console.log('players', players);
             console.log('isAllReady', isAllReady);
             console.log('isAllVoted', isAllVoted);
+            console.log('voteRound', voteRound);
+            console.log('deadPlayerIds', deadPlayerIds);
+            console.log('mafiaKillingMsgObjectArray', mafiaKillingMsgObjectArray);
+            console.log('voteCount', voteCount);
+            console.log('isGameStarted', isGameStarted);
         }
-        if(CMD_NAME === 'delete:channels') {
+        if(CMD_NAME === 'delete:channels' || CMD_NAME==='dcs') {
             console.log('channels: ', msg.guild.channels);
             msg.guild.channels.cache.map(channel => {
                 if(channel.name === 'chaccy' ||
@@ -282,13 +257,15 @@ client.on('message', async msg => {
     }
 });
 
-client.on('messageReactionAdd', (reaction, user) => {
+client.on('messageReactionAdd', async (reaction, user) => {
+    //TODO: 플레이어의 리액션만 수렴하도록 하기
+
     const msgId = reaction.message.id;
     const userId = user.id;
     const player = players.find(player => player.userId === userId);
     const mafiaPlayer = players.find(p => p.userId === mafiaId);
     const mafiaChannelId = mafiaPlayer?mafiaPlayer.channelId:"";
-    const mafiaChannel = reaction.message.guild.channels.cache.get(mafiaChannelId); //FIXME: Cannot read property 'channelId' of undefined
+    const mafiaChannel = reaction.message.guild.channels.cache.get(mafiaChannelId);
     const reactionFrom = reaction.message.channel;
     const playersChannels = reaction.message.guild.channels.cache.filter(channel => {
         return _.some(players, p => p.channelId === channel.id)
@@ -407,6 +384,7 @@ client.on('messageReactionAdd', (reaction, user) => {
             }
             if(!_.some(players, p => p.userId === mafiaId)) {
                 sendAnnouncement(playersChannels, '마피아가 처형되었습니다. 시민팀이 승리하였습니다.');
+                await setMute(reaction.message.guild, joinedUserIds, false);
             } else {
                 sendAnnouncement(playersChannels, '밤이 되었습니다.');
                 voteRound += 1;
@@ -431,6 +409,7 @@ client.on('messageReactionAdd', (reaction, user) => {
     //SECTION: kill someone through reaction
     if(_.some(mafiaKillingMsgObjectArray, mkmo => mkmo.messageId === reaction.message.id)) {
         const target = {...mafiaKillingMsgObjectArray.find(mkmo => mkmo.messageId === reaction.message.id)};
+        const playerIds = players.map(p => p.userId);
         
         //NOTE: initiate mafiaKillingMsgObjectArray and delete killing msgs
         mafiaKillingMsgObjectArray.forEach(mkmo => {
@@ -441,29 +420,20 @@ client.on('messageReactionAdd', (reaction, user) => {
 
         mafiaChannel.send(`당신은 ${target.targetUserName}을 제거하였습니다.`);
         players = _.filter(players, p => p.userId !== target.targetUserId);
-        console.log('players', players);
+
         sendAnnouncement(playersChannels, `낮이 되었습니다.`);
         sendAnnouncement(playersChannels, `${target.targetUserName}은(는) 마피아에게 ${reaction.emoji}로 살해당하였습니다.`);
         
         if(_.some(players, p => p.userId === mafiaId) && players.length < 3) { //NOTE: 마피아 승리 게임 종료 조건
             //NOTE: finish the game
             sendAnnouncement(playersChannels, `마피아가 승리하였습니다.`);
-            //TODO: Unmute every players
+            await setMute(reaction.message.guild, joinedUserIds, false);
             return;
         }
-        sendAnnouncement(playersChannels, `음소거가 해제 되었습니다. 3분간 토론을 진행해주세요.`);
+
         //NOTE: Unmute left players
-        players.forEach(player => {
-            const userId = player.userId;
-            const member = reaction.message.guild.members.cache.get(userId);
-            member.voice.setMute(false).then().catch(error => {
-                if(error.code === 40032) {
-                    console.log(`${member.user.username} is not connected to voice.`);
-                } else {
-                    console.log('error', error);
-                }
-            });
-        });
+        await setMute(reaction.message.guild, playerIds, false);
+        sendAnnouncement(playersChannels, `음소거가 해제 되었습니다. 3분간 토론을 진행해주세요.`);
 
         startDiscussion(playersChannels, players, reaction.message.guild);
         

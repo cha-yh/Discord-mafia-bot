@@ -1,8 +1,8 @@
 const sendAnnouncement = require("./sendAnnouncement");
 
 const SECOND = 1000;
-let leftSecond = 10;
-let totalSecond = 60;
+let leftSecond = 2;
+let totalSecond = 3;
 
 function startDiscussion(playersChannels, players, guild) {
     setTimeout(() => {
