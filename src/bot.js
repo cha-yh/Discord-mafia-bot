@@ -2,6 +2,7 @@ require('dotenv').config();
 const Discord = require('discord.js');
 const _ = require('lodash');
 const sendAnnouncement = require('./sendAnnouncement');
+const startDiscussion = require('./startDiscussion');
 
 const client = new Discord.Client();
 
@@ -20,11 +21,52 @@ let isAllVoted = false;
 let voteRound = 0;
 let deadPlayerIds = [];
 let mafiaKillingMsgObjectArray = [];
+let voteCount = 0;
+let isGameStarted = false;
+
+async function finishGame(guild) {    
+    //NOTE: delete created roles
+    createdRoleIds.forEach(id => {
+        guild.roles.cache.get(id).delete();
+    })
+    
+    //NOTE: unMute(when created game is end)
+    const promise1 = () => new Promise((resolve, reject) => {
+        const promises = joinedUserIds.map(id => {
+            return new Promise((_resolve) => {
+                _resolve(guild.members.cache.get(id).voice.setMute(false));
+            })
+        })
+        resolve(Promise.all(promises));
+    })
+    
+    //NOTE: delete created channels
+    const promise2 = () => new Promise((resolve, reject) => {
+        const promises = createdChannelIds.map(id => {
+            return new Promise((_resolve) => {
+                _resolve(guild.channels.cache.get(id).delete());
+            })
+        });
+        createdChannelIds = [];
+        resolve(Promise.all(promises));
+    })
+    
+    // Promise.all([promise1, promise2]);
+    await promise1();
+    await promise2();
+    
+    //NOTE : initiate vars
+    voiceChannelId = undefined;
+    players = [];
+    joinedUserIds = [];
+    isCreated = false;
+    isGameStarted = false;
+}
 
 client.on('ready', () => {
     console.log(`${client.user.tag} has logged in.`);
 })
-client.on('message', msg => {
+client.on('message', async msg => {
     if(msg.author.bot) return;
     if(msg.content.startsWith(PREFIX)) {
         const [CMD_NAME, ...args] = msg.content
@@ -88,7 +130,7 @@ client.on('message', msg => {
                 msg.channel.send('참가한 인원없이 게임을 시작할 수 없습니다.');
                 return;
             }
-
+            isGameStarted = true;
             //NOTE: init players
             players = joinedUserIds.map(userId => {
                 return {
@@ -126,7 +168,7 @@ client.on('message', msg => {
                     createdChannelIds.push(channel.id);
                     players.find(item => item.userId === userId).channelId = channel.id;
                     channel.send('모두 "토론 음성 채널"에 입장해주세요.');
-                    channel.send('이 채널은 당신에게만 보이는 채널입니다. 이곳은 오직 진행해야 하는 상황 메세지를 읽고, "반응추가"를 투표, 투표 가결 처리 등을 할 수 있습니다.');
+                    channel.send('이 채널은 당신에게만 보이는 채널입니다. 이곳은 오직 진행해야 하는 상황 메세지를 읽고, 우클릭>"반응추가"를 투표, 투표 가결 처리 등을 할 수 있습니다.');
                     userId === mafiaId && channel.send('당신은 마피아입니다. 밤이되면 죽이고 싶은 사람을 "반응 추가하기"를 통해 선택하세요.');
                     channel.send('[Ready] 준비가 완료되었습니까? 되었다면 이 메세지에 "반응 추가하기"를 하여 준비를 완료하세요.').then(msg => {
                         players.find(item => item.userId === userId).readyMsgId = msg.id;
@@ -194,6 +236,8 @@ client.on('message', msg => {
         }
         
         if(CMD_NAME === 'test') {
+            // console.log('voiceChannelId', voiceChannelId);
+            // console.log('voice: ', msg.guild.members.cache.get(msg.author.id).voice)
             console.log('players', players);
             console.log('isAllReady', isAllReady);
             console.log('isAllVoted', isAllVoted);
@@ -212,27 +256,7 @@ client.on('message', msg => {
         }
 
         if(CMD_NAME === 'end') {
-            
-            //NOTE: delete created channels
-            createdChannelIds.forEach(id => {
-                msg.guild.channels.cache.get(id).delete();
-            });
-            createdChannelIds = [];
-            voiceChannelId = undefined;
-            
-            //NOTE: delete created roles
-            createdRoleIds.forEach(id => {
-                msg.guild.roles.cache.get(id).delete();
-            })
-            
-            //NOTE: unMute(when created game is end)
-            joinedUserIds.forEach(id => {
-                msg.guild.members.cache.get(id).voice.setMute(false);
-            })
-
-            //NOTE : initiate vars
-            joinedUserIds = [];
-            isCreated = false;
+            await finishGame(msg.guild);
         }
 
         if(CMD_NAME === 'quit') {
@@ -263,69 +287,33 @@ client.on('messageReactionAdd', (reaction, user) => {
     const userId = user.id;
     const player = players.find(player => player.userId === userId);
     const mafiaPlayer = players.find(p => p.userId === mafiaId);
-    const mafiaChannel = reaction.message.guild.channels.cache.get(mafiaPlayer.channelId);
+    const mafiaChannelId = mafiaPlayer?mafiaPlayer.channelId:"";
+    const mafiaChannel = reaction.message.guild.channels.cache.get(mafiaChannelId); //FIXME: Cannot read property 'channelId' of undefined
+    const reactionFrom = reaction.message.channel;
     const playersChannels = reaction.message.guild.channels.cache.filter(channel => {
         return _.some(players, p => p.channelId === channel.id)
     })
-    //NOTE: for ready
+
+    //SECTION: for ready
     if(player.readyMsgId === msgId) {
-        players.find(player => player.userId === userId).isReady = true;
-        const userChannelId = players.find(player => player.userId === userId).channelId;
-        reaction.message.delete();
-        reaction.message.guild.channels.cache.get(userChannelId).send('게임 Ready 완료.')
+        // const userChannelId = players.find(player => player.userId === userId).channelId;
+        if(reaction.message.guild.members.cache.get(user.id).voice.channelID === voiceChannelId) {
+            players.find(player => player.userId === userId).isReady = true;
+            reaction.message.delete();
+            reactionFrom.send('게임 Ready 완료.');
+        } else {
+            reaction.remove();
+            reactionFrom.send('"토론 음성 채널" voice 채널에 입장 해주세요.').then(msg => {
+                msg.delete({timeout: 2000})
+            });
+        }
 
         isAllReady = !_.some(players, item => item.isReady === false );
 
         if(isAllReady) {
             sendAnnouncement(playersChannels, 'All users ready')
             sendAnnouncement(playersChannels, '모든 유저가 준비 완료되었습니다. 이제 3분 동안 토론을 진행할 수 있습니다. 3분이 지나면 자동 음소거 처리됩니다. 토론 후에는 투표를 진행하며, 지목된 사람은 최후의 변론을 위해 30초간 음소거가 해제됩니다. 그 후 찬반투표를 통해 최종결정을 하게됩니다.')
-            setTimeout(() => {
-                sendAnnouncement(playersChannels, '토론 종료까지 3초 남았습니다.');
-                setTimeout(() => {
-                    sendAnnouncement(playersChannels, '토론 종료. 투표를 위해 모두 음소거 처리됩니다. 각자의 채널에서 투표 메세지를 확인하고 투표를 진행해주세요.');
-                    //NOTE: mute players
-                    players.forEach(player => {
-                        const userId = player.userId;
-                        const member = reaction.message.guild.members.cache.get(userId);
-                        member.voice.setMute(true).then().catch(error => {
-                            if(error.code === 40032) {
-                                console.log(`${member.user.username} is not connected to voice.`);
-                            } else {
-                                console.log('error', error);
-                            }
-                        });
-                    });
-
-                    //NOTE: send messages about the vote
-                    isAllVoted = false;
-                    players.map(player => {
-                        const playerChannelId = player.channelId;
-                        const playerChannel = reaction.message.guild.channels.cache.get(playerChannelId);
-                        //TEMP
-                        // const playersWithOutMe = _.filter(players, player4Filter => {
-                        //     return (!player4Filter.isDead && player4Filter.userId !== player.userId);
-                        // })
-                        const playersWithOutMe = players;
-                        player.voteMessages = []; 
-                        console.log('playersWithOutMe', playersWithOutMe);
-                        playersWithOutMe.length && playersWithOutMe.forEach(pWOM => {
-                            playerChannel.send(`vote: ${pWOM.userName}`).then(msg => {
-                                player.voteMessages.push({
-                                    messageId: msg.id,
-                                    targetUserId: pWOM.userId
-                                });
-                            });
-                        });
-                        // playerChannel.send(`vote: 기권`).then(msg => {
-                        //     player.voteMessages.push({
-                        //         messageId: msg.id,
-                        //         targetUserId: "abstention"
-                        //     });
-                        // });
-                    });
-                    
-                }, 3000);
-            }, 1000);
+            startDiscussion(playersChannels, players, reaction.message.guild);
         }
     }
 
@@ -345,13 +333,17 @@ client.on('messageReactionAdd', (reaction, user) => {
         //NOTE: initiate voteMessages / voteCompleted
         player.voteMessages = [];
         player.isVoteCompletedArray.push(true);
+        console.log('player.isVoteCompletedArray', player.isVoteCompletedArray);
 
         //NOTE: change isAllVoted flag 
-        isAllVoted = !_.some(players, p => (p.isVoteCompletedArray[voteRound] === false || p.isVoteCompletedArray[voteRound] === undefined) );
-        
+        voteCount += 1;
+        isAllVoted = players.length === voteCount;
+        // isAllVoted = !_.some(players, p => (p.isVoteCompletedArray[voteRound] === false || p.isVoteCompletedArray[voteRound] === undefined) );
+        console.log('isAllVoted', isAllVoted);
         //NOTE: finish voting / round + 1
         //TODO: finish inside todos
         if(isAllVoted) {
+            voteCount = 0;
             sendAnnouncement(playersChannels, '모든 유저 투표 완료.');
             const voteResult = players.map(p => {
                 const userName = p.userName;
@@ -413,7 +405,7 @@ client.on('messageReactionAdd', (reaction, user) => {
                     sendAnnouncement(playersChannels, `최다득표자들의 투표수가 같아 아무도 처형되지 않았습니다.`);
                 }
             }
-            if(!mafiaPlayer) {
+            if(!_.some(players, p => p.userId === mafiaId)) {
                 sendAnnouncement(playersChannels, '마피아가 처형되었습니다. 시민팀이 승리하였습니다.');
             } else {
                 sendAnnouncement(playersChannels, '밤이 되었습니다.');
@@ -452,8 +444,15 @@ client.on('messageReactionAdd', (reaction, user) => {
         console.log('players', players);
         sendAnnouncement(playersChannels, `낮이 되었습니다.`);
         sendAnnouncement(playersChannels, `${target.targetUserName}은(는) 마피아에게 ${reaction.emoji}로 살해당하였습니다.`);
-        sendAnnouncement(playersChannels, `음소거가 해제됩니다. 3분간 토론을 진행해주세요.`);
-        //NOTE: unmute players
+        
+        if(_.some(players, p => p.userId === mafiaId) && players.length < 3) { //NOTE: 마피아 승리 게임 종료 조건
+            //NOTE: finish the game
+            sendAnnouncement(playersChannels, `마피아가 승리하였습니다.`);
+            //TODO: Unmute every players
+            return;
+        }
+        sendAnnouncement(playersChannels, `음소거가 해제 되었습니다. 3분간 토론을 진행해주세요.`);
+        //NOTE: Unmute left players
         players.forEach(player => {
             const userId = player.userId;
             const member = reaction.message.guild.members.cache.get(userId);
@@ -465,6 +464,11 @@ client.on('messageReactionAdd', (reaction, user) => {
                 }
             });
         });
+
+        startDiscussion(playersChannels, players, reaction.message.guild);
+        
+
+        
     }
 
 })
