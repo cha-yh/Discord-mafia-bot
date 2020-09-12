@@ -277,10 +277,13 @@ client.on('messageReactionAdd', async (reaction, user) => {
         if(reaction.message.guild.members.cache.get(user.id).voice.channelID === voiceChannelId) {
             players.find(player => player.userId === userId).isReady = true;
             reaction.message.delete();
-            reactionFrom.send('게임 Ready 완료.');
+            const embededReadyCompleteMsg = new Discord.MessageEmbed()
+                .setTitle('게임 Ready 완료.')
+                .setColor('GREEN');
+            reactionFrom.send(embededReadyCompleteMsg);
         } else {
             reaction.remove();
-            reactionFrom.send('"토론 음성 채널" voice 채널에 입장 해주세요.').then(msg => {
+            reactionFrom.send('"토론 음성 채널" voice 채널에 입장 해주세요.', {color:1}).then(msg => {
                 msg.delete({timeout: 2000})
             });
         }
@@ -288,8 +291,9 @@ client.on('messageReactionAdd', async (reaction, user) => {
         isAllReady = !_.some(players, item => item.isReady === false );
 
         if(isAllReady) {
-            sendAnnouncement(playersChannels, 'All users ready')
-            sendAnnouncement(playersChannels, '모든 유저가 준비 완료되었습니다. 이제 3분 동안 토론을 진행할 수 있습니다. 3분이 지나면 자동 음소거 처리됩니다. 토론 후에는 투표를 진행하며, 지목된 사람은 최후의 변론을 위해 30초간 음소거가 해제됩니다. 그 후 찬반투표를 통해 최종결정을 하게됩니다.')
+            sendAnnouncement(playersChannels, 'All users ready');
+            sendAnnouncement(playersChannels, `모든 유저가 준비 완료되었습니다.\n이제 3분 동안 토론을 진행할 수 있습니다.\n3분이 지나면 자동 음소거 처리됩니다.\n토론 후에는 투표가 진행됩니다.
+            `);
             startDiscussion(playersChannels, players, reaction.message.guild);
         }
     }
@@ -342,11 +346,16 @@ client.on('messageReactionAdd', async (reaction, user) => {
                 }
 
             });
-            let resultText = `[${voteRound+1} Round]`;
+            let resultText = undefined;
             voteResult.forEach(vr => {
-                resultText = resultText + '\n' +`${vr.voterName}가 ${vr.votedUserName}를 투표하였습니다.`
+                const newText = `${vr.voterName}가 ${vr.votedUserName}를 투표하였습니다.`;
+                resultText = resultText?`${resultText}\n${newText}`:`${newText}`
             })
-            sendAnnouncement(playersChannels, resultText);
+            const embededVoteResultMsg = new Discord.MessageEmbed()
+                .setTitle(`[${voteRound+1} Round 투표결과]`)
+                .setDescription(resultText)
+                .setColor("BLUE");
+            sendAnnouncement(playersChannels, embededVoteResultMsg);
 
             const countedVoteResult = _.countBy(voteResult, vr => `${vr.votedUserId}/${vr.votedUserName}`);
             //TODO: 투표수 과반시 players에서 삭제하고 투표로 처형했다는 메세지 보내기
@@ -389,12 +398,16 @@ client.on('messageReactionAdd', async (reaction, user) => {
                 sendAnnouncement(playersChannels, '밤이 되었습니다.');
                 voteRound += 1;
                 
-                mafiaChannel.send('제거할 대상에 "반응추가하기"를 눌러 지목해주세요.');
+                mafiaChannel.send('제거할 대상을 선택해주세요.');
                 const playersWithOutMafia = _.filter(players, p => {
                     return (p.userId !== mafiaId);
                 })
                 playersWithOutMafia.forEach(pWOM => {
-                    mafiaChannel.send(`kill: ${pWOM.userName} 제거하기`).then(msg => {
+                    const embededKillMsg = new Discord.MessageEmbed()
+                        .setTitle(`kill: ${pWOM.userName} 제거하기`)
+                        .setColor('RED')
+                        .setDescription(`${pWOM.userName}를 제거하려면 이 메세지를 우클릭하여 "반응 추가하기"를 눌러 선택하세요.`)
+                    mafiaChannel.send(embededKillMsg).then(msg => {
                         mafiaKillingMsgObjectArray.push({
                             messageId: msg.id,
                             targetUserId: pWOM.userId,
