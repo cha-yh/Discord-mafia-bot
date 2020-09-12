@@ -1,6 +1,8 @@
 require('dotenv').config();
 const Discord = require('discord.js');
 const _ = require('lodash');
+const sendAnnouncement = require('./sendAnnouncement');
+
 const client = new Discord.Client();
 
 const PREFIX = "$";
@@ -9,7 +11,6 @@ const MINUTE = 60*1000;
 let isCreated = false;
 let joinedUserIds = [];
 let createdChannelIds = [];
-let processChannelId = undefined;
 let voiceChannelId = undefined;
 let createdRoleIds = [];
 let mafiaId;
@@ -124,6 +125,7 @@ client.on('message', msg => {
                 }).then(channel => {
                     createdChannelIds.push(channel.id);
                     players.find(item => item.userId === userId).channelId = channel.id;
+                    channel.send('모두 "토론 음성 채널"에 입장해주세요.');
                     channel.send('이 채널은 당신에게만 보이는 채널입니다. 이곳은 오직 진행해야 하는 상황 메세지를 읽고, "반응추가"를 투표, 투표 가결 처리 등을 할 수 있습니다.');
                     userId === mafiaId && channel.send('당신은 마피아입니다. 밤이되면 죽이고 싶은 사람을 "반응 추가하기"를 통해 선택하세요.');
                     channel.send('[Ready] 준비가 완료되었습니까? 되었다면 이 메세지에 "반응 추가하기"를 하여 준비를 완료하세요.').then(msg => {
@@ -131,28 +133,8 @@ client.on('message', msg => {
                     })
                 })
             })
-            //NOTE: Create a channel for showing result
-            msg.guild.channels.create('전체 진행 채널', {
-                permissionOverwrites: msg.guild.members.cache.map(member => {
-                    const isMemberJoined = _.some(joinedUserIds, id => id === member.id);
-                    if(!isMemberJoined) {
-                        return {
-                            id: member.id,
-                            deny: ["VIEW_CHANNEL"]
-                        }
-                    }
-                    return {
-                        id: member.id,
-                        deny: ["SEND_MESSAGES"]
-                    }
-                })
-            }).then(channel => {
-                createdChannelIds.push(channel.id);
-                processChannelId = channel.id;
-                channel.send('이 채널은 전체 채널이며, 전체적인 게임 진행상황을 알려줍니다. ');
-                channel.send('게임 시작을 위해 각자의 채널에 접속하여 "Ready"라는 문구에 "반응추가하기"를 통해 아무 반응을 하면 준비상태가 됩니다.');
-                channel.send('모두 "토론 음성 채널"에 입장해주세요.');
-            })
+            
+
             //NOTE: Create a voice type channel
             msg.guild.channels.create('토론 음성 채널', {
                 type: "voice",
@@ -236,7 +218,6 @@ client.on('message', msg => {
                 msg.guild.channels.cache.get(id).delete();
             });
             createdChannelIds = [];
-            processChannelId = undefined;
             voiceChannelId = undefined;
             
             //NOTE: delete created roles
@@ -281,10 +262,11 @@ client.on('messageReactionAdd', (reaction, user) => {
     const msgId = reaction.message.id;
     const userId = user.id;
     const player = players.find(player => player.userId === userId);
-    const processChannel = reaction.message.guild.channels.cache.get(processChannelId);
     const mafiaPlayer = players.find(p => p.userId === mafiaId);
     const mafiaChannel = reaction.message.guild.channels.cache.get(mafiaPlayer.channelId);
-
+    const playersChannels = reaction.message.guild.channels.cache.filter(channel => {
+        return _.some(players, p => p.channelId === channel.id)
+    })
     //NOTE: for ready
     if(player.readyMsgId === msgId) {
         players.find(player => player.userId === userId).isReady = true;
@@ -295,13 +277,12 @@ client.on('messageReactionAdd', (reaction, user) => {
         isAllReady = !_.some(players, item => item.isReady === false );
 
         if(isAllReady) {
-            
-            processChannel.send('All users ready');
-            processChannel.send('모든 유저가 준비 완료되었습니다. 이제 3분 동안 토론을 진행할 수 있습니다. 3분이 지나면 자동 음소거 처리됩니다. 토론 후에는 투표를 진행하며, 지목된 사람은 최후의 변론을 위해 30초간 음소거가 해제됩니다. 그 후 찬반투표를 통해 최종결정을 하게됩니다.');
+            sendAnnouncement(playersChannels, 'All users ready')
+            sendAnnouncement(playersChannels, '모든 유저가 준비 완료되었습니다. 이제 3분 동안 토론을 진행할 수 있습니다. 3분이 지나면 자동 음소거 처리됩니다. 토론 후에는 투표를 진행하며, 지목된 사람은 최후의 변론을 위해 30초간 음소거가 해제됩니다. 그 후 찬반투표를 통해 최종결정을 하게됩니다.')
             setTimeout(() => {
-                processChannel.send('토론 종료까지 3초 남았습니다.');
+                sendAnnouncement(playersChannels, '토론 종료까지 3초 남았습니다.');
                 setTimeout(() => {
-                    processChannel.send('토론 종료. 투표를 위해 모두 음소거 처리됩니다. 각자의 채널에서 투표 메세지를 확인하고 투표를 진행해주세요.');
+                    sendAnnouncement(playersChannels, '토론 종료. 투표를 위해 모두 음소거 처리됩니다. 각자의 채널에서 투표 메세지를 확인하고 투표를 진행해주세요.');
                     //NOTE: mute players
                     players.forEach(player => {
                         const userId = player.userId;
@@ -371,7 +352,7 @@ client.on('messageReactionAdd', (reaction, user) => {
         //NOTE: finish voting / round + 1
         //TODO: finish inside todos
         if(isAllVoted) {
-            processChannel.send('모든 유저 투표 완료.');
+            sendAnnouncement(playersChannels, '모든 유저 투표 완료.');
             const voteResult = players.map(p => {
                 const userName = p.userName;
                 const votedUserId = p.voteUserIds[voteRound];
@@ -396,7 +377,7 @@ client.on('messageReactionAdd', (reaction, user) => {
             voteResult.forEach(vr => {
                 resultText = resultText + '\n' +`${vr.voterName}가 ${vr.votedUserName}를 투표하였습니다.`
             })
-            processChannel.send(resultText);
+            sendAnnouncement(playersChannels, resultText);
 
             const countedVoteResult = _.countBy(voteResult, vr => `${vr.votedUserId}/${vr.votedUserName}`);
             //TODO: 투표수 과반시 players에서 삭제하고 투표로 처형했다는 메세지 보내기
@@ -420,22 +401,22 @@ client.on('messageReactionAdd', (reaction, user) => {
             })
             console.log('sortedArray', sortedArray);
             if(sortedArray.length === 1) {
-                processChannel.send(`최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`);
+                sendAnnouncement(playersChannels, `최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`);
                 players = _.filter(players, p => p.userId !== sortedArray[0].userId);
                 deadPlayerIds.push(sortedArray[0].userId);
             } else if(sortedArray.length > 1) {
                 if(sortedArray[0].voteCount > sortedArray[1].voteCount) {
-                    processChannel.send(`최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`);
+                    sendAnnouncement(playersChannels, `최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`);
                     players = _.filter(players, p => p.userId !== sortedArray[0].userId);
                     deadPlayerIds.push(sortedArray[0].userId);
                 } else {
-                    processChannel.send(`최다득표자들의 투표수가 같아 아무도 처형되지 않았습니다.`)
+                    sendAnnouncement(playersChannels, `최다득표자들의 투표수가 같아 아무도 처형되지 않았습니다.`);
                 }
             }
             if(!mafiaPlayer) {
-                processChannel.send('마피아가 처형되었습니다. 시민팀이 승리하였습니다.');
+                sendAnnouncement(playersChannels, '마피아가 처형되었습니다. 시민팀이 승리하였습니다.');
             } else {
-                processChannel.send('밤이 되었습니다.');
+                sendAnnouncement(playersChannels, '밤이 되었습니다.');
                 voteRound += 1;
                 
                 mafiaChannel.send('제거할 대상에 "반응추가하기"를 눌러 지목해주세요.');
@@ -469,9 +450,9 @@ client.on('messageReactionAdd', (reaction, user) => {
         mafiaChannel.send(`당신은 ${target.targetUserName}을 제거하였습니다.`);
         players = _.filter(players, p => p.userId !== target.targetUserId);
         console.log('players', players);
-        processChannel.send(`낮이 되었습니다.`);
-        processChannel.send(`${target.targetUserName}은(는) 마피아에게 ${reaction.emoji}로 살해당하였습니다.`);
-        processChannel.send(`음소거가 해제됩니다. 3분간 토론을 진행해주세요.`);
+        sendAnnouncement(playersChannels, `낮이 되었습니다.`);
+        sendAnnouncement(playersChannels, `${target.targetUserName}은(는) 마피아에게 ${reaction.emoji}로 살해당하였습니다.`);
+        sendAnnouncement(playersChannels, `음소거가 해제됩니다. 3분간 토론을 진행해주세요.`);
         //NOTE: unmute players
         players.forEach(player => {
             const userId = player.userId;
