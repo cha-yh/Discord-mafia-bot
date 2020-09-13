@@ -5,6 +5,7 @@ const sendAnnouncement = require('./sendAnnouncement');
 const startDiscussion = require('./startDiscussion');
 const createChannels = require('./createChannels');
 const setMute = require('./setMute');
+const embededMsg = require('./emebededMsg');
 
 const client = new Discord.Client();
 
@@ -95,32 +96,36 @@ client.on('message', async msg => {
             const member = msg.guild.members.cache.get(authorId);
             if(index === -1) {
                 joinedUserIds.push(authorId);
-                msg.channel.send(`${member.user.username}님이 참여하였습니다.`);
+                msg.channel.send(embededMsg(`${member.user.username}님이 참여하였습니다.`, `총 ${joinedUserIds.length}명 참여중`, "GREEN"));
             } else {
-                msg.channel.send(`${member.user.username}님은 이미 참여한 상태입니다.`);
+                msg.channel.send(embededMsg('', `${member.user.username}님은 이미 참여한 상태입니다.`));
             }
+            msg.delete();
         }
 
         if(CMD_NAME === 'status') {
             const joinedUserCount = joinedUserIds.length;
         
-            msg.channel.send(`Joined user count: ${joinedUserCount}`);
             let joinedUserNames = [];
+            let joinedUserNamesText = '';
             joinedUserIds.length
-                ? 
-                joinedUserIds.forEach(userId => {
-                    const member = msg.guild.members.cache.get(userId);
-                    joinedUserNames.push(member.user.username);
-                })
-                
-                : msg.channel.send('아무도 참여하지 않은 상태입니다.');
-        
-            joinedUserNames.length && msg.channel.send(`참여한 멤버: ${joinedUserNames.join(', ')}`);
+            &&
+            joinedUserIds.forEach(userId => {
+                const member = msg.guild.members.cache.get(userId);
+                joinedUserNames.push(member.user.username);
+            })
+            
+            joinedUserNames.length
+            ? joinedUserNamesText = `참여한 멤버: ${joinedUserNames.join(', ')}`
+            : joinedUserNamesText = '아무도 참여하지 않은 상태입니다.'
+            
+            msg.channel.send(embededMsg(`참여 플레이어 수: ${joinedUserCount}`, joinedUserNamesText, 'GREEN'));
+            msg.delete();
         }
 
         if(CMD_NAME === 'start') {
             if(joinedUserIds.length === 0) {
-                msg.channel.send('참가한 인원없이 게임을 시작할 수 없습니다.');
+                msg.channel.send(embededMsg('', '참가한 인원없이 게임을 시작할 수 없습니다.'));
                 return;
             }
             isGameStarted = true;
@@ -143,7 +148,6 @@ client.on('message', async msg => {
             const randomIndex = Math.floor(Math.random() * joinedUserIds.length);
             mafiaId = joinedUserIds[randomIndex];
             const mafia = msg.guild.members.cache.get(mafiaId);
-            console.log('mafia name: ', mafia.user.username);
 
             //NOTE: create channels
             createChannels(msg.guild, joinedUserIds, players, mafiaId, createdChannelIds);
@@ -170,7 +174,7 @@ client.on('message', async msg => {
             })
 
             
-            
+            msg.delete();
 
             //NOTE : make roles
             //FIXME : fix position issue
@@ -277,13 +281,15 @@ client.on('messageReactionAdd', async (reaction, user) => {
         if(reaction.message.guild.members.cache.get(user.id).voice.channelID === voiceChannelId) {
             players.find(player => player.userId === userId).isReady = true;
             reaction.message.delete();
-            const embededReadyCompleteMsg = new Discord.MessageEmbed()
-                .setTitle('게임 Ready 완료.')
-                .setColor('GREEN');
-            reactionFrom.send(embededReadyCompleteMsg);
+            // const embededReadyCompleteMsg = new Discord.MessageEmbed()
+            //     .setTitle('게임 Ready 완료.')
+            //     .setColor('GREEN');
+            reactionFrom.send(embededMsg(
+                '게임 Ready 완료.', '', 'GREEN'
+            ));
         } else {
             reaction.remove();
-            reactionFrom.send('"토론 음성 채널" voice 채널에 입장 해주세요.', {color:1}).then(msg => {
+            reactionFrom.send(embededMsg('', '"토론 음성 채널" voice 채널에 입장 해주세요.')).then(msg => {
                 msg.delete({timeout: 2000})
             });
         }
@@ -291,9 +297,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
         isAllReady = !_.some(players, item => item.isReady === false );
 
         if(isAllReady) {
-            sendAnnouncement(playersChannels, 'All users ready');
-            sendAnnouncement(playersChannels, `모든 유저가 준비 완료되었습니다.\n이제 3분 동안 토론을 진행할 수 있습니다.\n3분이 지나면 자동 음소거 처리됩니다.\n토론 후에는 투표가 진행됩니다.
-            `);
+            sendAnnouncement(playersChannels, embededMsg('', 'All users ready'));
+            sendAnnouncement(playersChannels, embededMsg('', `모든 유저가 준비 완료되었습니다.\n이제 3분 동안 토론을 진행할 수 있습니다.\n3분이 지나면 자동 음소거 처리됩니다.\n토론 후에는 투표가 진행됩니다.`));
             startDiscussion(playersChannels, players, reaction.message.guild);
         }
     }
@@ -309,7 +314,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
             reaction.message.channel.messages.cache.get(msg.messageId).delete();
         });
         //NOTE: sending a message abount finishing vote
-        reaction.message.channel.send('투표 완료.');
+        reaction.message.channel.send(embededMsg('', '투표 완료.', "BLUE"));
 
         //NOTE: initiate voteMessages / voteCompleted
         player.voteMessages = [];
@@ -325,7 +330,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
         //TODO: finish inside todos
         if(isAllVoted) {
             voteCount = 0;
-            sendAnnouncement(playersChannels, '모든 유저 투표 완료.');
+            sendAnnouncement(playersChannels, embededMsg('', '모든 유저 투표 완료.', "BLUE"));
             const voteResult = players.map(p => {
                 const userName = p.userName;
                 const votedUserId = p.voteUserIds[voteRound];
@@ -351,11 +356,15 @@ client.on('messageReactionAdd', async (reaction, user) => {
                 const newText = `${vr.voterName}가 ${vr.votedUserName}를 투표하였습니다.`;
                 resultText = resultText?`${resultText}\n${newText}`:`${newText}`
             })
-            const embededVoteResultMsg = new Discord.MessageEmbed()
-                .setTitle(`[${voteRound+1} Round 투표결과]`)
-                .setDescription(resultText)
-                .setColor("BLUE");
-            sendAnnouncement(playersChannels, embededVoteResultMsg);
+            // const embededVoteResultMsg = new Discord.MessageEmbed()
+            //     .setTitle(`[${voteRound+1} Round 투표결과]`)
+            //     .setDescription(resultText)
+            //     .setColor("BLUE");
+            sendAnnouncement(playersChannels, embededMsg(
+                `[${voteRound+1} Round 투표결과]`,
+                resultText,
+                "BLUE"
+            ));
 
             const countedVoteResult = _.countBy(voteResult, vr => `${vr.votedUserId}/${vr.votedUserName}`);
             //TODO: 투표수 과반시 players에서 삭제하고 투표로 처형했다는 메세지 보내기
@@ -379,35 +388,39 @@ client.on('messageReactionAdd', async (reaction, user) => {
             })
             console.log('sortedArray', sortedArray);
             if(sortedArray.length === 1) {
-                sendAnnouncement(playersChannels, `최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`);
+                sendAnnouncement(playersChannels, embededMsg('', `최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`, "RED"));
                 players = _.filter(players, p => p.userId !== sortedArray[0].userId);
                 deadPlayerIds.push(sortedArray[0].userId);
             } else if(sortedArray.length > 1) {
                 if(sortedArray[0].voteCount > sortedArray[1].voteCount) {
-                    sendAnnouncement(playersChannels, `최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`);
+                    sendAnnouncement(playersChannels, embededMsg('', `최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`, "RED"));
                     players = _.filter(players, p => p.userId !== sortedArray[0].userId);
                     deadPlayerIds.push(sortedArray[0].userId);
                 } else {
-                    sendAnnouncement(playersChannels, `최다득표자들의 투표수가 같아 아무도 처형되지 않았습니다.`);
+                    sendAnnouncement(playersChannels, embededMsg('', `최다득표자들의 투표수가 같아 아무도 처형되지 않았습니다.`));
                 }
             }
             if(!_.some(players, p => p.userId === mafiaId)) {
-                sendAnnouncement(playersChannels, '마피아가 처형되었습니다. 시민팀이 승리하였습니다.');
+                sendAnnouncement(playersChannels, embededMsg('마피아가 처형되었습니다. 시민팀이 승리하였습니다.', '', 'RED'));
                 await setMute(reaction.message.guild, joinedUserIds, false);
             } else {
-                sendAnnouncement(playersChannels, '밤이 되었습니다.');
+                sendAnnouncement(playersChannels, embededMsg('', '밤이 되었습니다.', "PURPLE"));
                 voteRound += 1;
                 
-                mafiaChannel.send('제거할 대상을 선택해주세요.');
+                mafiaChannel.send(embededMsg('', '제거할 대상을 선택해주세요.', "RED"));
                 const playersWithOutMafia = _.filter(players, p => {
                     return (p.userId !== mafiaId);
                 })
                 playersWithOutMafia.forEach(pWOM => {
-                    const embededKillMsg = new Discord.MessageEmbed()
-                        .setTitle(`kill: ${pWOM.userName} 제거하기`)
-                        .setColor('RED')
-                        .setDescription(`${pWOM.userName}를 제거하려면 이 메세지를 우클릭하여 "반응 추가하기"를 눌러 선택하세요.`)
-                    mafiaChannel.send(embededKillMsg).then(msg => {
+                    // const embededKillMsg = new Discord.MessageEmbed()
+                    //     .setTitle(`kill: ${pWOM.userName} 제거하기`)
+                    //     .setColor('RED')
+                    //     .setDescription(`${pWOM.userName}를 제거하려면 이 메세지를 우클릭하여 "반응 추가하기"를 눌러 선택하세요.`)
+                    mafiaChannel.send(embededMsg(
+                        `kill: ${pWOM.userName} 제거하기`,
+                        `${pWOM.userName}를 제거하려면 이 메세지를 우클릭하여 "반응 추가하기"를 눌러 선택하세요.`,
+                        'RED'
+                    )).then(msg => {
                         mafiaKillingMsgObjectArray.push({
                             messageId: msg.id,
                             targetUserId: pWOM.userId,
@@ -431,22 +444,22 @@ client.on('messageReactionAdd', async (reaction, user) => {
         mafiaKillingMsgObjectArray = [];
 
 
-        mafiaChannel.send(`당신은 ${target.targetUserName}을 제거하였습니다.`);
+        mafiaChannel.send(embededMsg('', `당신은 ${target.targetUserName}을 제거하였습니다.`, "RED"));
         players = _.filter(players, p => p.userId !== target.targetUserId);
 
-        sendAnnouncement(playersChannels, `낮이 되었습니다.`);
-        sendAnnouncement(playersChannels, `${target.targetUserName}은(는) 마피아에게 ${reaction.emoji}로 살해당하였습니다.`);
+        sendAnnouncement(playersChannels, embededMsg('', `낮이 되었습니다.`, "WHITE"));
+        sendAnnouncement(playersChannels, embededMsg('', `${target.targetUserName}은(는) 마피아에게 ${reaction.emoji}로 살해당하였습니다.`, "RED"));
         
         if(_.some(players, p => p.userId === mafiaId) && players.length < 3) { //NOTE: 마피아 승리 게임 종료 조건
             //NOTE: finish the game
-            sendAnnouncement(playersChannels, `마피아가 승리하였습니다.`);
+            sendAnnouncement(playersChannels, embededMsg('', `마피아가 승리하였습니다.`, "RED"));
             await setMute(reaction.message.guild, joinedUserIds, false);
             return;
         }
 
         //NOTE: Unmute left players
         await setMute(reaction.message.guild, playerIds, false);
-        sendAnnouncement(playersChannels, `음소거가 해제 되었습니다. 3분간 토론을 진행해주세요.`);
+        sendAnnouncement(playersChannels, embededMsg('', `음소거가 해제 되었습니다. 3분간 토론을 진행해주세요.`));
 
         startDiscussion(playersChannels, players, reaction.message.guild);
         

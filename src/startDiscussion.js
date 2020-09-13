@@ -1,5 +1,6 @@
 const sendAnnouncement = require("./sendAnnouncement");
 const { MessageEmbed } = require('discord.js');
+const embededMsg = require("./emebededMsg");
 
 const SECOND = 1000;
 let leftSecond = 2;
@@ -7,9 +8,9 @@ let totalSecond = 3;
 
 function startDiscussion(playersChannels, players, guild) {
     setTimeout(() => {
-        sendAnnouncement(playersChannels, `토론 종료까지 ${leftSecond}초 남았습니다.`);
+        sendAnnouncement(playersChannels, embededMsg('', `토론 종료까지 ${leftSecond}초 남았습니다.`));
         setTimeout(() => {
-            sendAnnouncement(playersChannels, '토론 종료. 투표를 위해 모두 음소거 처리됩니다. 투표 메세지를 확인하고 투표를 진행해주세요.');
+            sendAnnouncement(playersChannels, embededMsg('', '토론 종료. 투표를 위해 모두 음소거 처리됩니다. 투표 메세지를 확인하고 투표를 진행해주세요.'));
             //NOTE: mute players
             players.forEach(player => {
                 const userId = player.userId;
