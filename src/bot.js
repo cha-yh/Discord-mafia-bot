@@ -6,6 +6,7 @@ const startDiscussion = require('./startDiscussion');
 const createChannels = require('./createChannels');
 const setMute = require('./setMute');
 const embededMsg = require('./emebededMsg');
+const checkFinish = require('./checkFinish');
 
 const client = new Discord.Client();
 
@@ -26,13 +27,10 @@ let deadPlayerIds = [];
 let mafiaKillingMsgObjectArray = [];
 let voteCount = 0;
 let isGameStarted = false;
+let deadBodyRoleId;
+let deadBodyChannelId;
 
-async function finishGame(guild) {
-    //NOTE: delete created roles
-    createdRoleIds.forEach(id => {
-        guild.roles.cache.get(id).delete();
-    })
-    
+async function finishGame(guild) {    
     //NOTE: delete created channels
     const deleteChannels = () => new Promise(async (resolve, reject) => {
         for(const id of createdChannelIds) {
@@ -100,7 +98,6 @@ client.on('message', async msg => {
             } else {
                 msg.channel.send(embededMsg('', `${member.user.username}님은 이미 참여한 상태입니다.`));
             }
-            msg.delete();
         }
 
         if(CMD_NAME === 'status') {
@@ -120,7 +117,6 @@ client.on('message', async msg => {
             : joinedUserNamesText = '아무도 참여하지 않은 상태입니다.'
             
             msg.channel.send(embededMsg(`참여 플레이어 수: ${joinedUserCount}`, joinedUserNamesText, 'GREEN'));
-            msg.delete();
         }
 
         if(CMD_NAME === 'start') {
@@ -128,6 +124,8 @@ client.on('message', async msg => {
                 msg.channel.send(embededMsg('', '참가한 인원없이 게임을 시작할 수 없습니다.'));
                 return;
             }
+
+            //SECTION: initiate
             isGameStarted = true;
             //NOTE: init players
             players = joinedUserIds.map(userId => {
@@ -144,10 +142,20 @@ client.on('message', async msg => {
 
                 }
             })
+            createdChannelIds = [];
+            voiceChannelId = undefined;
+            createdRoleIds = [];
+            isAllReady = false;
+            isAllVoted = false;
+            voteRound = 0;
+            deadPlayerIds = [];
+            mafiaKillingMsgObjectArray = [];
+            voteCount = 0;
+            deadBodyRoleId;
+            deadBodyChannelId;
             //NOTE: random mafia
             const randomIndex = Math.floor(Math.random() * joinedUserIds.length);
             mafiaId = joinedUserIds[randomIndex];
-            const mafia = msg.guild.members.cache.get(mafiaId);
 
             //NOTE: create channels
             createChannels(msg.guild, joinedUserIds, players, mafiaId, createdChannelIds);
@@ -155,6 +163,7 @@ client.on('message', async msg => {
             //NOTE: Create a voice type channel
             msg.guild.channels.create('토론 음성 채널', {
                 type: "voice",
+                topic: "createdByMafiaBot",
                 permissionOverwrites: msg.guild.members.cache.map(member => {
                     const isMemberJoined = _.some(joinedUserIds, id => id === member.id);
                     if(!isMemberJoined) {
@@ -173,36 +182,18 @@ client.on('message', async msg => {
                 voiceChannelId = channel.id;
             })
 
-            
-            msg.delete();
-
-            //NOTE : make roles
-            //FIXME : fix position issue
-            // msg.guild.roles.create({
-            //     data: {
-            //         name: '송장',
-            //         position: joinedUserIds.length+1,
-            //         color: 'DARK_GREY',
-            //         permissions: []
-            //     }
-            // }).then(role => {
-            //     createdRoleIds.push(role.id);
-            // })
-            
-            // joinedUserIds.forEach(userId => {
-            //     msg.guild.roles.create({
-            //         data: {
-            //             name: `role[${userId}]`,
-            //             position: userId === mafiaId ? joinedUserIds.length : 1,
-            //             color: 'GOLD',
-            //             permissions: userId === mafiaId ? ['MANAGE_ROLES'] : []
-            //         }
-            //     }).then(role => {
-            //         createdRoleIds.push(role.id);
-            //         const member = msg.guild.members.cache.get(userId);
-            //         member.roles.add(role.id);
-            //     });
-            // })
+            await msg.guild.channels.create('시체 채널', {
+                topic: "createdByMafiaBot",
+                permissionOverwrites: msg.guild.members.cache.map(member => {
+                    return {
+                        id: member.id,
+                        deny: ["VIEW_CHANNEL"]
+                    }
+                })
+            }).then(channel => {
+                createdChannelIds.push(channel.id);
+                deadBodyChannelId = channel.id;
+            })
         }
         
         if(CMD_NAME === 'test') {
@@ -224,12 +215,13 @@ client.on('message', async msg => {
         if(CMD_NAME === 'delete:channels' || CMD_NAME==='dcs') {
             console.log('channels: ', msg.guild.channels);
             msg.guild.channels.cache.map(channel => {
-                if(channel.name === 'chaccy' ||
-                    channel.name === 'chayh' ||
-                    channel.name === '전체-진행-채널' ||
-                    channel.name === '토론 음성 채널'
-                ) {
-                    channel.delete();
+                if(channel.topic === 'createdByMafiaBot' || channel.name === '토론 음성 채널') {
+                    channel.delete()
+                }
+            })
+            msg.guild.roles.cache.forEach(role => {
+                if(role.name === '시체') {
+                    role.delete();
                 }
             })
         }
@@ -250,7 +242,6 @@ client.on('message', async msg => {
             if(msg.author.id === '370497277438984203') {
                 msg.guild.members.cache.get(msg.author.id).voice.setMute(false);
             } else {
-                
                 if(_.some(joinedUserIds, id => id === msg.author.id)) {
                     msg.guild.members.cache.get(msg.author.id).voice.setMute(false);
                 } else {
@@ -275,15 +266,17 @@ client.on('messageReactionAdd', async (reaction, user) => {
         return _.some(players, p => p.channelId === channel.id)
     })
 
+    if(!player) {
+        console.log('empty player: ', player)
+        return;
+    }
+
     //SECTION: for ready
     if(player.readyMsgId === msgId) {
         // const userChannelId = players.find(player => player.userId === userId).channelId;
         if(reaction.message.guild.members.cache.get(user.id).voice.channelID === voiceChannelId) {
             players.find(player => player.userId === userId).isReady = true;
             reaction.message.delete();
-            // const embededReadyCompleteMsg = new Discord.MessageEmbed()
-            //     .setTitle('게임 Ready 완료.')
-            //     .setColor('GREEN');
             reactionFrom.send(embededMsg(
                 '게임 Ready 완료.', '', 'GREEN'
             ));
@@ -356,10 +349,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
                 const newText = `${vr.voterName}가 ${vr.votedUserName}를 투표하였습니다.`;
                 resultText = resultText?`${resultText}\n${newText}`:`${newText}`
             })
-            // const embededVoteResultMsg = new Discord.MessageEmbed()
-            //     .setTitle(`[${voteRound+1} Round 투표결과]`)
-            //     .setDescription(resultText)
-            //     .setColor("BLUE");
+            
             sendAnnouncement(playersChannels, embededMsg(
                 `[${voteRound+1} Round 투표결과]`,
                 resultText,
@@ -367,13 +357,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
             ));
 
             const countedVoteResult = _.countBy(voteResult, vr => `${vr.votedUserId}/${vr.votedUserName}`);
-            //TODO: 투표수 과반시 players에서 삭제하고 투표로 처형했다는 메세지 보내기
-            //TODO: 만약 마피아 처형시 게임 종료. 메세지 발송 후 종료.
-            //TODO: 만약 abstention 과반 시 아무일도 없다는 메세지.
-            //TODO: 마피아의 밤이 찾아오는 로직 구현하기
-            //TODO: 마피아가 밤에 죽인 사람은 음소거가 되고 시체들이 대화할 수 있는 채널에서 채팅이가능하다.
 
-            console.log('countedVoteResult', countedVoteResult);
             const mappedArray = [];
             Object.keys(countedVoteResult).forEach(key => {
                 mappedArray.push({
@@ -382,27 +366,38 @@ client.on('messageReactionAdd', async (reaction, user) => {
                     voteCount: countedVoteResult[key]
                 })
             })
-            console.log('mappedArray', mappedArray);
+
             const sortedArray = mappedArray.sort((a,b) => {
                 return a.voteCount > b.voteCount ? -1 : a.voteCount < b.voteCount ? 1 : 0;
             })
-            console.log('sortedArray', sortedArray);
-            if(sortedArray.length === 1) {
+            
+            if(sortedArray.length === 1 || sortedArray[0].voteCount > sortedArray[1].voteCount) {
                 sendAnnouncement(playersChannels, embededMsg('', `최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`, "RED"));
                 players = _.filter(players, p => p.userId !== sortedArray[0].userId);
                 deadPlayerIds.push(sortedArray[0].userId);
-            } else if(sortedArray.length > 1) {
-                if(sortedArray[0].voteCount > sortedArray[1].voteCount) {
-                    sendAnnouncement(playersChannels, embededMsg('', `최다득표수(${sortedArray[0].voteCount})를 얻은 ${sortedArray[0].name}은 투표로 인해 처형되었습니다.`, "RED"));
-                    players = _.filter(players, p => p.userId !== sortedArray[0].userId);
-                    deadPlayerIds.push(sortedArray[0].userId);
-                } else {
-                    sendAnnouncement(playersChannels, embededMsg('', `최다득표자들의 투표수가 같아 아무도 처형되지 않았습니다.`));
-                }
+                reaction.message.guild.channels.cache.get(deadBodyChannelId).overwritePermissions([
+                    ...reaction.message.guild.channels.cache.get(deadBodyChannelId).permissionOverwrites.map(item => item),
+                    {
+                        id: sortedArray[0].userId,
+                        allow: ["VIEW_CHANNEL"],
+                        deny: []
+                    }
+                ])
+            } else {
+                sendAnnouncement(playersChannels, embededMsg('', `최다득표자들의 투표수가 같아 아무도 처형되지 않았습니다.`));
             }
-            if(!_.some(players, p => p.userId === mafiaId)) {
+
+            const gameStatus = checkFinish(players, mafiaId);
+            if(gameStatus === 'MAFIA_LOSE'){
                 sendAnnouncement(playersChannels, embededMsg('마피아가 처형되었습니다. 시민팀이 승리하였습니다.', '', 'RED'));
                 await setMute(reaction.message.guild, joinedUserIds, false);
+                sendAnnouncement(playersChannels, embededMsg('', '게임이 종료되었습니다.'))
+                return;
+            } else if(gameStatus === 'MAFIA_WIN'){
+                sendAnnouncement(playersChannels, embededMsg(`마피아(${mafiaPlayer.userName})가 승리하였습니다.`, '', 'RED'));
+                await setMute(reaction.message.guild, joinedUserIds, false);
+                sendAnnouncement(playersChannels, embededMsg('', '게임이 종료되었습니다.'))
+                return;
             } else {
                 sendAnnouncement(playersChannels, embededMsg('', '밤이 되었습니다.', "PURPLE"));
                 voteRound += 1;
@@ -412,10 +407,6 @@ client.on('messageReactionAdd', async (reaction, user) => {
                     return (p.userId !== mafiaId);
                 })
                 playersWithOutMafia.forEach(pWOM => {
-                    // const embededKillMsg = new Discord.MessageEmbed()
-                    //     .setTitle(`kill: ${pWOM.userName} 제거하기`)
-                    //     .setColor('RED')
-                    //     .setDescription(`${pWOM.userName}를 제거하려면 이 메세지를 우클릭하여 "반응 추가하기"를 눌러 선택하세요.`)
                     mafiaChannel.send(embededMsg(
                         `kill: ${pWOM.userName} 제거하기`,
                         `${pWOM.userName}를 제거하려면 이 메세지를 우클릭하여 "반응 추가하기"를 눌러 선택하세요.`,
@@ -450,9 +441,9 @@ client.on('messageReactionAdd', async (reaction, user) => {
         sendAnnouncement(playersChannels, embededMsg('', `낮이 되었습니다.`, "WHITE"));
         sendAnnouncement(playersChannels, embededMsg('', `${target.targetUserName}은(는) 마피아에게 ${reaction.emoji}로 살해당하였습니다.`, "RED"));
         
-        if(_.some(players, p => p.userId === mafiaId) && players.length < 3) { //NOTE: 마피아 승리 게임 종료 조건
+        if(checkFinish(players, mafiaId)==="MAFIA_WIN") { //NOTE: 마피아 승리 게임 종료 조건
             //NOTE: finish the game
-            sendAnnouncement(playersChannels, embededMsg('', `마피아가 승리하였습니다.`, "RED"));
+            sendAnnouncement(playersChannels, embededMsg('', `마피아(${mafiaPlayer.userName})가 승리하였습니다.`, "RED"));
             await setMute(reaction.message.guild, joinedUserIds, false);
             return;
         }

@@ -5,6 +5,7 @@ function createChannels(guild, joinedUserIds, players, mafiaId, createdChannelId
     for(const userId of joinedUserIds) {
         const member = guild.members.cache.get(userId);
         guild.channels.create(`${member.user.username}`, {
+            topic: "createdByMafiaBot",
             permissionOverwrites: guild.members.cache.map(member => {
                 if(member.id === userId) {
                     return {
