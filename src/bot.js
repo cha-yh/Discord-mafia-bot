@@ -89,6 +89,10 @@ client.on('message', async msg => {
         }
 
         if(CMD_NAME === 'join') {
+            if(isGameStarted) {
+                msg.channel.send(embededMsg('', '이미 게임이 시작되었습니다.'))
+                return;
+            }
             const authorId = msg.author.id;
             const index = joinedUserIds.findIndex(userId => userId === authorId);
             const member = msg.guild.members.cache.get(authorId);
@@ -120,6 +124,12 @@ client.on('message', async msg => {
         }
 
         if(CMD_NAME === 'start') {
+            //TODO: 게임 테스트가 있나면 다음 업데이트로, 의사, 경찰, 추가 마피아에 대한 로직짜기
+            if(isGameStarted) {
+                msg.channel.send(embededMsg('', '이미 게임이 시작되었습니다.'))
+                return;
+            }
+            
             if(joinedUserIds.length === 0) {
                 msg.channel.send(embededMsg('', '참가한 인원없이 게임을 시작할 수 없습니다.'));
                 return;
@@ -127,6 +137,8 @@ client.on('message', async msg => {
 
             //SECTION: initiate
             isGameStarted = true;
+            msg.channel.send(embededMsg('게임이 시작되었습니다.', '플레이어는 각자의 채널과 "토론 음성 채널"에 입장해주세요'));
+            
             //NOTE: init players
             players = joinedUserIds.map(userId => {
                 return {
@@ -253,8 +265,7 @@ client.on('message', async msg => {
 });
 
 client.on('messageReactionAdd', async (reaction, user) => {
-    //TODO: 플레이어의 리액션만 수렴하도록 하기
-
+    
     const msgId = reaction.message.id;
     const userId = user.id;
     const player = players.find(player => player.userId === userId);
@@ -265,7 +276,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
     const playersChannels = reaction.message.guild.channels.cache.filter(channel => {
         return _.some(players, p => p.channelId === channel.id)
     })
-
+    
+    //NOTE: 플레이어의 리액션만 수렴하도록 하기
     if(!player) {
         console.log('empty player: ', player)
         return;
